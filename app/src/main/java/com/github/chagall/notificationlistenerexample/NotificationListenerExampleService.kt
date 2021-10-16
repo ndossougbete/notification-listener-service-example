@@ -1,7 +1,6 @@
 package com.github.chagall.notificationlistenerexample
 
 import android.app.Notification
-import android.app.Person
 import android.content.Intent
 import android.os.Build
 import android.service.notification.NotificationListenerService
@@ -9,9 +8,15 @@ import android.service.notification.StatusBarNotification
 import androidx.annotation.RequiresApi
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+
+
+val JSON = "application/json; charset=utf-8".toMediaType()
 
 
 /**
@@ -42,6 +47,8 @@ class NotificationListenerExampleService : NotificationListenerService() {
         const val GOOGLE_CHAT_PACK_NAME = "com.google.android.apps.dynamite"
     }
 
+    private val client = OkHttpClient()
+
     object InterceptedNotificationCode {
         const val FACEBOOK_CODE = 1
         const val WHATSAPP_CODE = 2
@@ -53,7 +60,6 @@ class NotificationListenerExampleService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val notificationCode = processNotification(sbn)
 
-//        if(notificationCode == InterceptedNotificationCode.OTHER_NOTIFICATIONS_CODE) return;
         val intent = Intent("com.github.chagall.notificationlistenerexample")
         intent.putExtra("Notification Code", notificationCode)
         sendBroadcast(intent)
@@ -76,7 +82,7 @@ class NotificationListenerExampleService : NotificationListenerService() {
         }
     }
 
-    data class NotificationDetails(val title: String?, val content: String?, val author: String?) {
+    data class NotificationDetails(val sourceApp: String, val title: String? = null, val content: String? = null, val author: String? = null) {
 
         companion object {
             fun fromSbn(sbn: StatusBarNotification): NotificationDetails {
@@ -86,6 +92,7 @@ class NotificationListenerExampleService : NotificationListenerService() {
                     messages.removeAll(msgCompat.historicMessages);
 
                     return NotificationDetails(
+                            sbn.packageName,
                             msgCompat.conversationTitle?.toString(),
                             msgCompat.messages.last()?.toString(),
                             msgCompat.user.name?.toString(),
@@ -93,6 +100,7 @@ class NotificationListenerExampleService : NotificationListenerService() {
                 }
 
                 return NotificationDetails(
+                        sbn.packageName,
                         sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
                         sbn.notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
                         null
@@ -101,6 +109,9 @@ class NotificationListenerExampleService : NotificationListenerService() {
         }
 
         fun isEmpty() = title.isNullOrEmpty() || author.isNullOrEmpty();
+        fun toRequestBody(): RequestBody {
+            return "TODO".toRequestBody(JSON)
+        }
     }
 
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
@@ -114,21 +125,41 @@ class NotificationListenerExampleService : NotificationListenerService() {
             }
         }
 
+        val appCode = when (notificationDetails.sourceApp) {
+            ApplicationPackageNames.FACEBOOK_PACK_NAME ->
+                InterceptedNotificationCode.FACEBOOK_CODE
+            ApplicationPackageNames.FACEBOOK_MESSENGER_PACK_NAME ->
+                InterceptedNotificationCode.FACEBOOK_CODE
+            ApplicationPackageNames.INSTAGRAM_PACK_NAME ->
+                InterceptedNotificationCode.INSTAGRAM_CODE
+            ApplicationPackageNames.WHATSAPP_PACK_NAME ->
+                InterceptedNotificationCode.WHATSAPP_CODE
+            ApplicationPackageNames.GOOGLE_CHAT_PACK_NAME ->
+                InterceptedNotificationCode.GOOGLE_CHAT_CODE
+            else ->
+                InterceptedNotificationCode.OTHER_NOTIFICATIONS_CODE
 
-
-
-        val packageName = sbn.packageName
-        return if (packageName == ApplicationPackageNames.FACEBOOK_PACK_NAME || packageName == ApplicationPackageNames.FACEBOOK_MESSENGER_PACK_NAME) {
-            InterceptedNotificationCode.FACEBOOK_CODE
-        } else if (packageName == ApplicationPackageNames.INSTAGRAM_PACK_NAME) {
-            InterceptedNotificationCode.INSTAGRAM_CODE
-        } else if (packageName == ApplicationPackageNames.WHATSAPP_PACK_NAME) {
-            InterceptedNotificationCode.WHATSAPP_CODE
-        } else if (packageName == ApplicationPackageNames.GOOGLE_CHAT_PACK_NAME) {
-            InterceptedNotificationCode.GOOGLE_CHAT_CODE
-        } else {
-            InterceptedNotificationCode.OTHER_NOTIFICATIONS_CODE
         }
+
+        if (appCode != InterceptedNotificationCode.OTHER_NOTIFICATIONS_CODE) {
+            pushContent(notificationDetails)
+        }
+
+        return appCode;
     }
 
+
+    private fun pushContent(content: NotificationDetails) {
+        val body = content.toRequestBody()
+        val request = Request.Builder()
+                .url("TODO url")
+                .post(body)
+                .build()
+        try {
+            val response = client.newCall(request).execute();
+            Log.i("NCC", response.body.toString())
+        } catch (e: IOException) {
+            Log.e("NCC", e.toString(), e)
+        }
+    }
 }
